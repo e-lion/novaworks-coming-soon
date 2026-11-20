@@ -75,7 +75,7 @@
   // ---------- the face: state ----------
   var face = { h: 0, w: 0, top: 0, cx: 0, eyeY: 0, u: 0, zc: 0, sp: 0, db: 0, n: 0 };
   var FS = 96, FA0 = -0.96, FDA = 1.92 / (FS - 1);  // samples across each fine line
-  var FB0 = -0.99, FB1 = 1.95;                      // head top to shoulders, in face units
+  var FB0 = -0.99, FB1 = 1.0;                       // crown to chin, in face units
   var faceGrid = new Float32Array(0);
   var fxs = new Float32Array(FS + 2), fys = new Float32Array(FS + 2);
   var fsh = new Float32Array(FS + 2), fef = new Float32Array(FS + 2), fbk = new Uint8Array(FS + 2);
@@ -87,6 +87,7 @@
   // Live state read by the depth map and the eye glints
   var life = { eye: 0, blink: 0, brow: 0, furrow: 0, mouth: 0, wide: 0, gx: 0, gy: 0 };
   var mouse = { x: 0, y: 0, active: 0 };
+  var faceGlitch = null, nextFaceGlitch = 3;
   var blinkT = -1, nextBlink = 6;
   var glanceUntil = 0, glanceX = 0, glanceY = 0, nextGlance = 5;
 
@@ -188,66 +189,33 @@
     if (b <= -1 || b >= 1) return 0;
     return Math.pow(Math.sqrt(1 - b * b), 0.6) * (0.95 - 0.22 * sstep(-0.2, 1, b));
   }
-  function neckHw(b) {
-    if (b < 0.55) return 0;
-    return (0.40 + 0.14 * sstep(1.0, 1.2, b) + 0.5 * sstep(1.15, 1.6, b)) * sstep(0.55, 0.95, b);
-  }
-  function hwAt(b) { return Math.max(headHw(b), neckHw(b)); }
+  function hwAt(b) { return headHw(b); }
 
   // Depth toward the viewer at (a, b): a across, b down, roughly -1..1 over the head.
+  // Deliberately abstract: a smooth dome plus a handful of bold shapes (brow bar,
+  // eye slots, nose wedge, mouth slit, chin block), then terraced into flat steps.
   function faceD(a, b, yaw) {
     var hw = hwAt(b);
     if (hw <= 0) return 0;
     var n = a / hw;
     if (n <= -1 || n >= 1) return 0;
     var edge = 1 - n * n;
-    var headF = b < 1 ? Math.pow(1 - b * b, 0.2) : 0;
-    var d = 0.40 * Math.sqrt(edge) * (0.5 + 0.5 * headF);
-    if (b > 1.02) return d;
+    var d = 0.42 * Math.sqrt(edge) * (0.55 + 0.45 * Math.pow(1 - b * b, 0.2));
 
     var af = a + yaw, f = 0;
-    var o = life.eye, br = life.brow, fu = life.furrow, mo = life.mouth;
-
-    // forehead and brows (one brow sits a touch higher than the other)
-    f += gau(af, b, 0, -0.55, 0.45, 0.18, 0.05);
-    f += gau2a(af, b, 0.38, -0.30 - 0.05 * br, 0.26, 0.08, 0.085, 0.10);
-    f += gau(af, b, 0, -0.28, 0.12, 0.07, 0.05);                  // glabella
-    f += gau(af, b, 0, -0.24, 0.05, 0.10, -0.08 * fu);            // furrow between the brows
-
-    // eyes: sockets, softer when open, with bags beneath
-    f += gau2(af, b, 0.40, -0.14, 0.18, 0.07, -0.13 * (1 - 0.7 * o));
-    f += gau2(af, b, 0.40, -0.08, 0.17, 0.04, -0.06 * (1 - o));
-    f += gau2(af, b, 0.40, -0.01, 0.16, 0.035, 0.03);
-
-    // nose
-    f += gau(af, b, 0, -0.04, 0.075, 0.26, 0.17);                 // bridge
-    f += gau(af, b, 0, 0.20, 0.11, 0.09, 0.17);                   // tip
-    f += gau2(af, b, 0.14, 0.24, 0.07, 0.06, 0.06);               // nostril wings
-    f += gau2(af, b, 0.08, 0.28, 0.04, 0.04, -0.07);              // nostrils
-
-    // cheeks and the folds beside the mouth
-    f += gau2(af, b, 0.50, 0.0, 0.20, 0.13, 0.07);                // cheekbones
-    f += gau2(af, b, 0.55, 0.35, 0.15, 0.15, -0.04);              // hollows
-    f += gau2(af, b, 0.27, 0.34, 0.05, 0.13, -0.035);             // nasolabial folds
-
-    // mouth: lips part when it gasps
-    f += gau(af, b, 0, 0.36, 0.05, 0.06, -0.03);                  // philtrum
-    f += gau(af, b, 0, 0.44 - 0.02 * mo, 0.20, 0.045, 0.07);      // upper lip
-    f += gau(af, b, 0, 0.50, 0.22, 0.03 + 0.03 * mo, -0.10 - 0.14 * mo); // mouth line / opening
-    f += gau(af, b, 0, 0.57 + 0.03 * mo, 0.17, 0.05, 0.075);      // lower lip
-    f += gau(af, b, 0, 0.66, 0.15, 0.04, -0.04);                  // under-lip dip
-    f += gau(af, b, 0, 0.78, 0.20, 0.10, 0.09);                   // chin
-
+    var o = life.eye, br = life.brow, mo = life.mouth;
+    f += gau(af, b, 0, -0.30 - 0.05 * br, 0.62, 0.07, 0.09);            // brow bar
+    f += gau2(af, b, 0.40, -0.13, 0.20, 0.07, -0.12 * (1 - 0.6 * o));  // eye slots
+    f += gau(af, b, 0, 0.02, 0.09, 0.30, 0.16);                         // nose ridge
+    f += gau(af, b, 0, 0.22, 0.16, 0.09, 0.12);                         // nose base
+    f += gau(af, b, 0, 0.50, 0.26, 0.03 + 0.03 * mo, -0.12 - 0.12 * mo); // mouth slit, opens when it gasps
+    f += gau(af, b, 0, 0.78, 0.22, 0.10, 0.07);                         // chin block
+    f += gau2(af, b, 0.50, 0.05, 0.18, 0.14, 0.05);                     // cheek planes
     var res = d + f * sstep(0, 0.45, edge);
 
-    // wet hair: heavier mass above an uneven hairline and down the temples,
-    // with strand texture that catches the light
-    var hl = -0.55 + 0.05 * Math.sin(af * 8 + 1);
-    var hair = Math.max(sstep(hl + 0.06, hl - 0.06, b), sstep(0.78, 0.94, Math.abs(n)) * sstep(0.25, -0.15, b));
-    if (hair > 0) {
-      res += hair * Math.sqrt(edge) * (0.05 + 0.014 * Math.sin(af * 46 + 3.5 * Math.sin(b * 7 + af * 2.5)));
-    }
-    return res;
+    // terraces: half smooth, half stepped, so it reads as low-poly facets
+    var step = 0.06;
+    return 0.45 * res + 0.55 * (Math.round(res / step) * step);
   }
 
   // ---------- setup ----------
@@ -284,7 +252,7 @@
     face.u = novaX / width;
     var zMid = clamp01((face.top + face.h * 0.5 - horizon) / (bottomY - horizon));
     face.zc = Math.pow(zMid, 1 / 2.15);
-    face.sp = Math.max(2.8, Math.min(4.4, face.h / 72));
+    face.sp = Math.max(4, Math.min(6.2, face.h / 52));
     face.db = face.sp / (face.h * 0.5);
     var bEnd = Math.min(FB1, (height + 12 - face.top) / (face.h * 0.5) - 1);
     face.n = Math.max(0, Math.floor((bEnd - FB0) / face.db) + 1);
@@ -429,9 +397,9 @@
   function prepFace(t) {
     Ee = Math.pow(E, 1.1) * (1 + 0.025 * Math.sin(t * 1.7) * sstep(0.6, 1, E)); // relief, with a breath
     Ef = sstep(0.1, 0.45, E);                                                     // fine lines fade in
-    Qd = 0.16 * Math.pow(1 - clamp01(E), 1.6);                                    // pixel size of the digital steps
+    Qd = Math.max(0.055, 0.16 * Math.pow(1 - clamp01(E), 1.6));                   // pixel size: never fully smooth, always digital
     fyaw = life.gx * 0.1 + Math.sin(t * 0.23) * 0.04 + 0.02;
-    frelief = face.h * 0.17;
+    frelief = face.h * 0.2;
     scanF = -1.15 + 3.2 * E;                                                      // sweep position, follows emergence both ways
     scanAmt = sstep(0.04, 0.14, E) * (1 - sstep(0.9, 1, E));
     face.cx = novaX + pointer * 14;
@@ -443,7 +411,7 @@
     if (E < 0.003) return 0;
     var dx = (x - face.cx) / (face.w * 0.9);
     if (dx > 1.4 || dx < -1.4) return 0;
-    var dy = (y - (face.top + face.h * 0.95)) / (face.h * 1.15);
+    var dy = (y - (face.top + face.h * 0.55)) / (face.h * 0.85);
     var rr = Math.sqrt(dx * dx + dy * dy);
     return E * (1 - sstep(0.55, 1.2, rr));
   }
@@ -475,12 +443,14 @@
 
   // Fine contour line j: it follows the same waves as everything else, flattened
   // where the face forms, then pushed up by the depth map.
-  var FINE_ALPHA = [0.07, 0.18, 0.33, 0.52, 0.74, 0.95];
+  var FINE_ALPHA = [0.1, 0.24, 0.42, 0.62, 0.82, 0.98];
   function drawFineLine(j, t, ou) {
     var H = face.h, half = face.w * 0.5, n = face.n;
     var b = FB0 + j * face.db;
-    var hw = hwAt(b);
+    var bq = (Math.floor(b / Qd) + 0.5) * Qd;                 // silhouette steps in pixel blocks too
+    var hw = hwAt(bq);
     if (hw <= 0.01) return;
+    var gshift = faceGlitch && j >= faceGlitch.from && j < faceGlitch.from + faceGlitch.n ? faceGlitch.shift : 0;
     var yb = face.top + (b + 1) * H * 0.5;
     var z = Math.pow(clamp01((yb - horizon) / (bottomY - horizon)), 1 / 2.15);
     var amp = height * (0.008 + 0.15 * Math.pow(z, 1.85));
@@ -502,7 +472,7 @@
         var nx = -dx * 1.3, ny = -dy * 1.3;
         sh = (nx * -0.45 + ny * -0.55 + 0.7) / Math.sqrt(nx * nx + ny * ny + 1);
       }
-      var x = face.cx + a * half;
+      var x = face.cx + a * half + gshift;
       var ocean = ridge(x / width, z, t, ou) * amp * (1 - 0.9 * calmAt(x, yb));
       fxs[m] = x;
       fys[m] = yb - ocean - Ee * d * frelief;
@@ -525,11 +495,11 @@
 
     // brightness per segment: lit slopes glow, the scan sweep flares, edges fade into the waves
     var scan = Math.exp(-Math.pow((b - scanF) / 0.06, 2)) * scanAmt;
-    var flick = 1 - (1 - E) * 0.55 * (Math.sin(t * 23 + j * 12.9898) > 0.6 ? 1 : 0);  // digital flicker while unresolved
+    var flick = 1 - (0.1 + (1 - E) * 0.5) * (Math.sin(t * 23 + j * 12.9898) > 0.62 ? 1 : 0);  // digital flicker, heavier while unresolved
     for (k = 0; k < m - 1; k++) {
       var shade = clamp01(((fsh[k] + fsh[k + 1]) * 0.5 - 0.35) / 0.6);
       var ed = (fef[k] + fef[k + 1]) * 0.5;
-      var v = ((0.4 + 0.6 * shade) * ed + scan * 0.85) * flick;
+      var v = ((0.5 + 0.5 * shade) * ed + scan * 0.85) * flick;
       fbk[k] = Math.min(5, Math.floor(clamp01(v) * 5.999));
     }
     ctx.lineWidth = 0.9;
@@ -553,25 +523,26 @@
     }
   }
 
-  // Two small lights where the eyes are; they blink and follow the pointer.
+  // Digital eyes: two glowing pixel bars that blink and follow the pointer.
   function drawGlints() {
     var open = Math.min(1.2, life.eye * (1 - life.blink) * (1 + life.wide));
     if (open < 0.06 || Ef < 0.05) return;
     var half = face.w * 0.5, ea = 0.4, eb = -0.13;
     var yEye = face.top + (eb + 1) * face.h * 0.5;
+    var bw = Math.max(6, half * 0.24);
+    var bh = Math.max(2, half * 0.05 * Math.min(1, open));
     for (var s = -1; s <= 1; s += 2) {
-      var x = face.cx + s * ea * half + life.gx * half * 0.035;
-      var y = yEye - Ee * faceD(s * ea, eb, fyaw) * frelief + life.gy * half * 0.02;
-      var r = half * 0.1;
+      var x = face.cx + s * ea * half + life.gx * half * 0.07;
+      var y = yEye - Ee * faceD(s * ea, eb, fyaw) * frelief + life.gy * half * 0.04;
+      x = Math.round(x); y = Math.round(y);
+      var r = half * 0.22;
       var g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "rgb(205 226 255 / " + (0.6 * open * Ef).toFixed(3) + ")");
+      g.addColorStop(0, "rgb(160 200 255 / " + (0.4 * open * Ef).toFixed(3) + ")");
       g.addColorStop(1, rgba(0));
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
-      ctx.fillStyle = "rgb(240 247 255 / " + (0.95 * Math.min(1, open) * Ef).toFixed(3) + ")";
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(1.1, half * 0.017), 0, TAU);
-      ctx.fill();
+      ctx.fillStyle = "rgb(228 240 255 / " + (0.95 * Math.min(1, open) * Ef).toFixed(3) + ")";
+      ctx.fillRect(Math.round(x - bw / 2), Math.round(y - bh / 2), Math.round(bw), Math.round(bh));
     }
   }
 
@@ -583,6 +554,16 @@
 
     prepFace(t);
     var faceOn = E > 0.02 && face.n > 0;
+    if (!reduceMotion.matches) {
+      if (!faceGlitch && E > 0.5 && time > nextFaceGlitch) {
+        faceGlitch = { from: 4 + Math.floor(Math.random() * Math.max(1, face.n - 14)), n: 1 + Math.floor(Math.random() * 3),
+                       shift: (Math.random() < 0.5 ? -1 : 1) * (face.w * (0.04 + Math.random() * 0.08)), t: 0 };
+      }
+      if (faceGlitch) {
+        faceGlitch.t += dt;
+        if (faceGlitch.t > 0.14) { faceGlitch = null; nextFaceGlitch = time + 2.2 + Math.random() * 3.5; }
+      }
+    }
     if (faceOn) fillFaceGrid();
     var nextFine = 0;
     var glintsDone = false;
@@ -724,7 +705,7 @@
 
   function start() {
     cancelAnimationFrame(rafId);
-    meteor = null; glitch = null;
+    meteor = null; glitch = null; faceGlitch = null;
     if (reduceMotion.matches) {
       time = 9.5; pointer = 0;
       E = 0.85; disturb = 0;                                    // still frame: face mostly formed

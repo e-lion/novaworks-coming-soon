@@ -1,10 +1,10 @@
 # Novaworks: coming soon
 
 A single-page coming-soon site: a glowing nova over a perspective field of
-ridged, shockwave-driven wave lines, with a starfield and the odd meteor. Every so often the ocean itself forms a face: the waves calm, the surface rises into
-a relief, fine contour lines fade in between the wave rows, and it resolves out of
-digital pixel steps before dissolving back into the sea. Its eyes blink and follow
-your cursor.
+ridged, shockwave-driven wave lines, with a starfield and the odd meteor. Every so often the ocean itself forms an abstract digital face: the waves calm, the
+surface rises into a stepped, pixel-block relief, fine contour lines fade in between
+the wave rows, and it dissolves back into the sea. Its pixel-bar eyes blink and
+follow your cursor.
 Plain HTML, CSS and one small JS file. No build step.
 
 - Dark space theme with one electric-blue accent.
