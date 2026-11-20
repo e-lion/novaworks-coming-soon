@@ -94,24 +94,22 @@
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
   function clampN(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
   function sstep(a, b, x) { var t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
-  function easeIO(x) {
-    x = clamp01(x);
-    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-  }
   function bump(p, c, w) { var d = (p - c) / w; return Math.exp(-d * d); }
 
-  // One cycle: calm, the surface rises into a face, it lingers, then dissolves back.
-  var CYCLE = 22;
+  // One cycle: calm, the surface slowly rises into a face, it lingers, then
+  // slowly settles back. Quintic ease, so there is no visible start or stop.
+  function smoother(x) { x = clamp01(x); return x * x * x * (x * (x * 6 - 15) + 10); }
+  var CYCLE = 26;
+  var T_RISE0 = 3, T_RISE1 = 12, T_HOLD1 = 14.5, T_FALL1 = 22;
   function emergence(t) {
     var p = t % CYCLE;
-    if (p < 3) return 0;
-    if (p < 10) return easeIO((p - 3) / 7);
-    if (p < 12.5) return 1 + 0.012 * Math.sin(((p - 10) / 2.5) * Math.PI);
-    if (p < 18) {
-      var k = (p - 12.5) / 5.5;
-      // a brief struggle against the pull, then it gives way
-      var tug = 0.045 * Math.sin(k * Math.PI * 3) * Math.sin(k * Math.PI);
-      return Math.max(0, 1 - easeIO(k) + tug);
+    if (p < T_RISE0) return 0;
+    if (p < T_RISE1) return smoother((p - T_RISE0) / (T_RISE1 - T_RISE0));
+    if (p < T_HOLD1) return 1 + 0.008 * Math.sin(((p - T_RISE1) / (T_HOLD1 - T_RISE1)) * Math.PI);
+    if (p < T_FALL1) {
+      var k = (p - T_HOLD1) / (T_FALL1 - T_HOLD1);
+      var tug = 0.02 * Math.sin(k * Math.PI * 2) * Math.sin(k * Math.PI);   // the faintest hesitation
+      return Math.max(0, 1 - smoother(k) + tug);
     }
     return 0;
   }
@@ -119,12 +117,12 @@
   // Expression, blink and gaze for this moment of the story.
   function updateLife(t, dt) {
     var p = t % CYCLE;
-    life.eye = sstep(0.6, 0.8, E);
+    life.eye = sstep(0.72, 0.94, E);
 
-    var gasp = bump(p, 8.7, 0.9);
-    var strain = bump(p, 13.4, 1.5);
+    var gasp = bump(p, 10.6, 1.2);
+    var strain = bump(p, 16.5, 1.8);
     var breath = 0.5 + 0.5 * Math.sin(t * 1.7);
-    life.brow = 0.55 * bump(p, 8.9, 1.2) + 0.4 * strain;
+    life.brow = 0.4 * bump(p, 10.8, 1.5) + 0.3 * strain;
     life.furrow = 0.7 * strain;
     life.mouth = clamp01(0.75 * gasp + 0.5 * strain + 0.1 * breath * life.eye);
     life.wide = 0.3 * strain + 0.15 * gasp;
@@ -144,14 +142,14 @@
 
     // gaze: up at the nova, then at the viewer, then down at what is pulling it under
     var tx = 0, ty;
-    if (p < 10) ty = -0.45 + 0.45 * sstep(0.8, 1, E);
-    else if (p < 12.5) ty = 0.05;
-    else ty = 0.05 + 0.65 * sstep(12.5, 14, p);
+    if (p < T_RISE1) ty = -0.45 + 0.45 * sstep(0.8, 1, E);
+    else if (p < T_HOLD1) ty = 0.05;
+    else ty = 0.05 + 0.6 * sstep(T_HOLD1, T_HOLD1 + 2.5, p);
 
     if (mouse.active > 0.02) {
       var fx = clampN((mouse.x - face.cx) / (width * 0.45), -1, 1);
       var fy = clampN((mouse.y - face.eyeY) / (height * 0.45), -1, 1);
-      var w = clamp01(mouse.active) * (p < 12.5 ? 0.9 : 0.4);
+      var w = clamp01(mouse.active) * (p < T_HOLD1 ? 0.9 : 0.4);
       tx += (fx - tx) * w;
       ty += (fy - ty) * w;
     }
@@ -396,12 +394,12 @@
   // Parameters shared by everything that draws the face this frame.
   function prepFace(t) {
     Ee = Math.pow(E, 1.1) * (1 + 0.025 * Math.sin(t * 1.7) * sstep(0.6, 1, E)); // relief, with a breath
-    Ef = sstep(0.1, 0.45, E);                                                     // fine lines fade in
+    Ef = sstep(0.15, 0.7, E);                                                     // fine lines fade in
     Qd = Math.max(0.075, 0.16 * Math.pow(1 - clamp01(E), 1.6));                   // pixel size: never fully smooth, always digital
     fyaw = life.gx * 0.1 + Math.sin(t * 0.23) * 0.04 + 0.02;
     frelief = face.h * 0.2;
     scanF = -1.15 + 3.2 * E;                                                      // sweep position, follows emergence both ways
-    scanAmt = sstep(0.04, 0.14, E) * (1 - sstep(0.9, 1, E));
+    scanAmt = sstep(0.1, 0.3, E) * (1 - sstep(0.85, 1, E)) * 0.7;
     face.cx = novaX + pointer * 14;
     face.eyeY = face.top + (-0.13 + 1) * face.h * 0.5;
   }
@@ -696,7 +694,7 @@
     prevE = E;
     E = emergence(time);
     var vel = dt > 0 ? Math.abs(E - prevE) / dt : 0;           // how fast the surface is changing
-    disturb += (Math.min(vel, 0.5) * 2.2 - disturb * 0.7) * dt;
+    disturb += (Math.min(vel, 0.5) * 1.6 - disturb * 0.7) * dt;
     if (disturb < 0) disturb = 0;
     updateLife(time, dt);
     draw(dt);
