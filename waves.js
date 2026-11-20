@@ -252,7 +252,7 @@
     face.u = novaX / width;
     var zMid = clamp01((face.top + face.h * 0.5 - horizon) / (bottomY - horizon));
     face.zc = Math.pow(zMid, 1 / 2.15);
-    face.sp = Math.max(4, Math.min(6.2, face.h / 52));
+    face.sp = Math.max(7, Math.min(11, face.h / 30));
     face.db = face.sp / (face.h * 0.5);
     var bEnd = Math.min(FB1, (height + 12 - face.top) / (face.h * 0.5) - 1);
     face.n = Math.max(0, Math.floor((bEnd - FB0) / face.db) + 1);
@@ -397,7 +397,7 @@
   function prepFace(t) {
     Ee = Math.pow(E, 1.1) * (1 + 0.025 * Math.sin(t * 1.7) * sstep(0.6, 1, E)); // relief, with a breath
     Ef = sstep(0.1, 0.45, E);                                                     // fine lines fade in
-    Qd = Math.max(0.055, 0.16 * Math.pow(1 - clamp01(E), 1.6));                   // pixel size: never fully smooth, always digital
+    Qd = Math.max(0.075, 0.16 * Math.pow(1 - clamp01(E), 1.6));                   // pixel size: never fully smooth, always digital
     fyaw = life.gx * 0.1 + Math.sin(t * 0.23) * 0.04 + 0.02;
     frelief = face.h * 0.2;
     scanF = -1.15 + 3.2 * E;                                                      // sweep position, follows emergence both ways
@@ -443,7 +443,7 @@
 
   // Fine contour line j: it follows the same waves as everything else, flattened
   // where the face forms, then pushed up by the depth map.
-  var FINE_ALPHA = [0.1, 0.24, 0.42, 0.62, 0.82, 0.98];
+  var FINE_ALPHA = [0.08, 0.18, 0.3, 0.44, 0.6, 0.78];
   function drawFineLine(j, t, ou) {
     var H = face.h, half = face.w * 0.5, n = face.n;
     var b = FB0 + j * face.db;
@@ -499,7 +499,7 @@
     for (k = 0; k < m - 1; k++) {
       var shade = clamp01(((fsh[k] + fsh[k + 1]) * 0.5 - 0.35) / 0.6);
       var ed = (fef[k] + fef[k + 1]) * 0.5;
-      var v = ((0.5 + 0.5 * shade) * ed + scan * 0.85) * flick;
+      var v = ((0.45 + 0.55 * shade) * ed + scan * 0.7) * flick;
       fbk[k] = Math.min(5, Math.floor(clamp01(v) * 5.999));
     }
     ctx.lineWidth = 0.9;
@@ -529,19 +529,19 @@
     if (open < 0.06 || Ef < 0.05) return;
     var half = face.w * 0.5, ea = 0.4, eb = -0.13;
     var yEye = face.top + (eb + 1) * face.h * 0.5;
-    var bw = Math.max(6, half * 0.24);
-    var bh = Math.max(2, half * 0.05 * Math.min(1, open));
+    var bw = Math.max(5, half * 0.2);
+    var bh = Math.max(1.5, half * 0.038 * Math.min(1, open));
     for (var s = -1; s <= 1; s += 2) {
       var x = face.cx + s * ea * half + life.gx * half * 0.07;
       var y = yEye - Ee * faceD(s * ea, eb, fyaw) * frelief + life.gy * half * 0.04;
       x = Math.round(x); y = Math.round(y);
       var r = half * 0.22;
       var g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "rgb(160 200 255 / " + (0.4 * open * Ef).toFixed(3) + ")");
+      g.addColorStop(0, "rgb(160 200 255 / " + (0.26 * open * Ef).toFixed(3) + ")");
       g.addColorStop(1, rgba(0));
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
-      ctx.fillStyle = "rgb(228 240 255 / " + (0.95 * Math.min(1, open) * Ef).toFixed(3) + ")";
+      ctx.fillStyle = "rgb(210 228 255 / " + (0.7 * Math.min(1, open) * Ef).toFixed(3) + ")";
       ctx.fillRect(Math.round(x - bw / 2), Math.round(y - bh / 2), Math.round(bw), Math.round(bh));
     }
   }
@@ -656,7 +656,7 @@
         ctx.stroke(curve);
       } else {
         for (var pi = 0; pi < 4; pi++) {
-          var am = (1 - 0.82 * Ef) + (0.82 * Ef) * (pi / 3);
+          var am = (1 - 0.5 * Ef) + (0.5 * Ef) * (pi / 3);
           ctx.lineWidth = 1 + z * 4.5;
           ctx.strokeStyle = rgba(a * 0.12 * am);
           ctx.stroke(dimPaths[pi]);
