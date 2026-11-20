@@ -5,7 +5,7 @@ ridged, shockwave-driven wave lines, with a starfield and the odd meteor.
 Plain HTML, CSS and one small JS file. No build step.
 
 - Dark space theme with one electric-blue accent.
-- Respects `prefers-reduced-motion` (renders a still frame).
+- Respects `prefers-reduced-motion` (renders a still frame with the face risen).
 - Geist is self-hosted from `fonts/`.
 
 ## Run locally
