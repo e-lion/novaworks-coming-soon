@@ -243,7 +243,7 @@
     // The face lies in the ocean itself: head top just below the horizon,
     // chin and shoulders running down into the foreground.
     face.h = Math.min(height * (narrow ? 0.28 : 0.36), width * (narrow ? 0.58 : 0.5));
-    face.w = face.h * 0.78;
+    face.w = face.h * 1.02;
     face.top = horizon + height * 0.012;
     face.cx = novaX;
     face.eyeY = face.top + (-0.13 + 1) * face.h * 0.5;
