@@ -64,23 +64,39 @@
   var BOTTOM_K = 1.08; // ridge-field bottom edge as a multiple of viewport height
 
   // ---------- the face ----------
-  // A sculpted face built from the same contour-line language as the ocean: a
-  // depth map (dome + brow, eyelids, nose, lips, chin) is sliced into horizontal
+  // A face built from the same contour-line language as the ocean: a depth map
+  // (skull, brows, nose, lips, chin, wet hair) is sliced into fine horizontal
   // lines, each pushed upward by its depth. It is drawn between two water rows,
   // so the rows in front hide whatever is still submerged.
-  var face = { h: 0, w: 0, chinY: 0, row: 0, zc: 0, u: 0, amp: 0, n: 0, db: 0, sp: 0 };
-  var FS = 56, FA0 = -0.96, FDA = 1.92 / (FS - 1);   // samples across each line
-  var FB0 = -0.99, FB1 = 1.45;                      // head top to neck, in face units
+  //
+  // What makes it feel alive rather than carved:
+  //   - open eyes that blink, glance around and follow the pointer
+  //   - an expression that changes with the story (calm, startled gasp, strain)
+  //   - slight asymmetry, a head that turns toward its gaze, breathing
+  //   - water running down the skin
+  var face = { h: 0, w: 0, chinY: 0, row: 0, zc: 0, u: 0, amp: 0, n: 0, db: 0, sp: 0, cx: 0, cy: 0 };
+  var FS = 96, FA0 = -0.96, FDA = 1.92 / (FS - 1);  // samples across each line
+  var FB0 = -0.99, FB1 = 1.95;                      // head top to neck, in face units
   var faceGrid = new Float32Array(0);
   var fxs = new Float32Array(FS + 2), fys = new Float32Array(FS + 2), fsh = new Float32Array(FS + 2);
+  var fbk = new Uint8Array(FS + 2);
   var E = 0, prevE = 0, disturb = 0;                // emergence 0..1 and water disturbance
 
+  // Live state read by the depth map and the eyes
+  var life = { eye: 0, blink: 0, brow: 0, furrow: 0, mouth: 0, wide: 0, gx: 0, gy: 0 };
+  var mouse = { x: 0, y: 0, active: 0 };
+  var blinkT = -1, nextBlink = 6;
+  var glanceUntil = 0, glanceX = 0, glanceY = 0, nextGlance = 5;
+  var runners = [], nextRunner = 0;
+
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function clampN(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
   function sstep(a, b, x) { var t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
   function easeIO(x) {
     x = clamp01(x);
     return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
   }
+  function bump(p, c, w) { var d = (p - c) / w; return Math.exp(-d * d); }
 
   // One cycle: lurk below, breach slowly, hold, then get pulled back under.
   var CYCLE = 22;
@@ -98,6 +114,78 @@
     return 0;
   }
 
+  // Expression, blink and gaze for this moment of the story.
+  function updateLife(t, dt) {
+    var p = t % CYCLE;
+    life.eye = sstep(0.6, 0.8, E);                          // eyes open as they clear the water
+
+    var gasp = bump(p, 8.7, 0.9);                           // mouth clears the surface: a sharp breath in
+    var strain = bump(p, 13.4, 1.5);                        // being dragged back down
+    var breath = 0.5 + 0.5 * Math.sin(t * 1.7);
+    life.brow = 0.55 * bump(p, 8.9, 1.2) + 0.4 * strain;    // lifted: surprise, then fear
+    life.furrow = 0.7 * strain;
+    life.mouth = clamp01(0.75 * gasp + 0.5 * strain + 0.1 * breath * life.eye);
+    life.wide = 0.3 * strain + 0.15 * gasp;                 // eyes widen
+
+    // blink
+    if (blinkT < 0 && t > nextBlink && life.eye > 0.9) blinkT = 0;
+    if (blinkT >= 0) {
+      blinkT += dt;
+      var kb = blinkT / 0.2;
+      if (kb >= 1) {
+        blinkT = -1; life.blink = 0;
+        nextBlink = t + 2.2 + Math.random() * 3.6;
+        if (Math.random() < 0.18) nextBlink = t + 0.25;     // occasional double blink
+      } else {
+        life.blink = Math.sin(kb * Math.PI);
+      }
+    }
+
+    // gaze: first up at the nova, then at the viewer, then down at what is pulling it
+    var tx = 0, ty;
+    if (p < 10) ty = -0.45 + 0.45 * sstep(0.8, 1, E);
+    else if (p < 12.5) ty = 0.05;
+    else ty = 0.05 + 0.65 * sstep(12.5, 14, p);
+
+    // and it follows the pointer while one is moving around
+    if (mouse.active > 0.02) {
+      var fx = clampN((mouse.x - face.cx) / (width * 0.45), -1, 1);
+      var fy = clampN((mouse.y - (face.cy - face.h * 0.55)) / (height * 0.45), -1, 1);
+      var w = clamp01(mouse.active) * (p < 12.5 ? 0.9 : 0.4);
+      tx += (fx - tx) * w;
+      ty += (fy - ty) * w;
+    }
+    mouse.active = Math.max(0, mouse.active - dt / 5);
+
+    // an idle glance now and then
+    if (t > nextGlance) {
+      glanceUntil = t + 0.5 + Math.random() * 0.8;
+      glanceX = (Math.random() - 0.5) * 1.1;
+      glanceY = (Math.random() - 0.5) * 0.5;
+      nextGlance = t + 2.5 + Math.random() * 3.5;
+    }
+    if (t < glanceUntil && mouse.active < 0.3) { tx += glanceX; ty += glanceY; }
+
+    var follow = Math.min(dt * 8, 1);
+    life.gx += (clampN(tx, -1, 1) - life.gx) * follow;
+    life.gy += (clampN(ty, -1, 1) - life.gy) * follow;
+
+    // droplets running down the skin
+    if (E < 0.4) {
+      runners.length = 0;
+    } else {
+      if (E > 0.7 && t > nextRunner && runners.length < 7) {
+        runners.push({ a: (Math.random() - 0.5) * 1.2, b: -0.95, v: 0.16 + Math.random() * 0.2 });
+        nextRunner = t + 0.3 + Math.random() * 0.8;
+      }
+      for (var i = runners.length - 1; i >= 0; i--) {
+        var r = runners[i];
+        r.b += r.v * dt * (1 + Math.max(0, r.b) * 0.6);
+        if (r.b > 1.05) runners.splice(i, 1);
+      }
+    }
+  }
+
   function gau(a, b, ca, cb, sa, sb, amp) {
     var db = (b - cb) / sb;
     if (db > 2.6 || db < -2.6) return 0;
@@ -107,6 +195,10 @@
   function gau2(a, b, ca, cb, sa, sb, amp) {
     return gau(a, b, ca, cb, sa, sb, amp) + gau(a, b, -ca, cb, sa, sb, amp);
   }
+  // symmetric pair with a little imbalance: real faces are not mirror images
+  function gau2a(a, b, ca, cb, sa, sb, amp, asym) {
+    return gau(a, b, ca, cb, sa, sb, amp * (1 + asym)) + gau(a, b, -ca, cb, sa, sb, amp * (1 - asym));
+  }
 
   function headHw(b) {
     if (b <= -1 || b >= 1) return 0;
@@ -114,7 +206,7 @@
   }
   function neckHw(b) {
     if (b < 0.55) return 0;
-    return (0.40 + 0.14 * sstep(1.0, 1.45, b)) * sstep(0.55, 0.95, b);
+    return (0.40 + 0.14 * sstep(1.0, 1.45, b) + 0.42 * sstep(1.4, 1.95, b)) * sstep(0.55, 0.95, b);
   }
   function hwAt(b) { return Math.max(headHw(b), neckHw(b)); }
 
@@ -130,23 +222,48 @@
     if (b > 1.02) return d;
 
     var af = a + yaw, f = 0;
-    f += gau2(af, b, 0.36, -0.30, 0.26, 0.08, 0.10);   // brow ridges
-    f += gau(af, b, 0, -0.28, 0.12, 0.07, 0.06);       // glabella
-    f += gau2(af, b, 0.36, -0.16, 0.17, 0.07, -0.13);  // closed eyes: sockets
-    f += gau2(af, b, 0.36, -0.08, 0.17, 0.04, -0.06);  // lids
-    f += gau(af, b, 0, -0.04, 0.075, 0.26, 0.17);      // nose bridge
-    f += gau(af, b, 0, 0.20, 0.11, 0.09, 0.17);        // nose tip
-    f += gau2(af, b, 0.14, 0.24, 0.07, 0.06, 0.06);    // nostril wings
-    f += gau2(af, b, 0.08, 0.28, 0.04, 0.04, -0.07);   // nostrils
-    f += gau(af, b, 0, 0.36, 0.05, 0.06, -0.03);       // philtrum
-    f += gau(af, b, 0, 0.44, 0.20, 0.045, 0.07);       // upper lip
-    f += gau(af, b, 0, 0.50, 0.22, 0.03, -0.10);       // mouth line
-    f += gau(af, b, 0, 0.57, 0.17, 0.05, 0.075);       // lower lip
-    f += gau(af, b, 0, 0.66, 0.15, 0.04, -0.04);       // under-lip dip
-    f += gau(af, b, 0, 0.78, 0.20, 0.10, 0.09);        // chin
-    f += gau2(af, b, 0.50, 0.0, 0.20, 0.13, 0.07);     // cheekbones
-    f += gau2(af, b, 0.55, 0.35, 0.15, 0.15, -0.04);   // cheek hollows
-    return d + f * sstep(0, 0.45, edge);
+    var o = life.eye, br = life.brow, fu = life.furrow, mo = life.mouth;
+
+    // forehead and brows (one brow sits a touch higher than the other)
+    f += gau(af, b, 0, -0.55, 0.45, 0.18, 0.05);
+    f += gau2a(af, b, 0.38, -0.30 - 0.05 * br, 0.26, 0.08, 0.085, 0.10);
+    f += gau(af, b, 0, -0.28, 0.12, 0.07, 0.05);                  // glabella
+    f += gau(af, b, 0, -0.24, 0.05, 0.10, -0.08 * fu);            // furrow between the brows
+
+    // eyes: shallow sockets when open, soft bags beneath
+    f += gau2(af, b, 0.40, -0.14, 0.18, 0.07, -0.13 * (1 - 0.7 * o));
+    f += gau2(af, b, 0.40, -0.08, 0.17, 0.04, -0.06 * (1 - o));
+    f += gau2(af, b, 0.40, -0.01, 0.16, 0.035, 0.03);
+
+    // nose
+    f += gau(af, b, 0, -0.04, 0.075, 0.26, 0.17);                 // bridge
+    f += gau(af, b, 0, 0.20, 0.11, 0.09, 0.17);                   // tip
+    f += gau2(af, b, 0.14, 0.24, 0.07, 0.06, 0.06);               // nostril wings
+    f += gau2(af, b, 0.08, 0.28, 0.04, 0.04, -0.07);              // nostrils
+
+    // cheeks and the folds beside the mouth
+    f += gau2(af, b, 0.50, 0.0, 0.20, 0.13, 0.07);                // cheekbones
+    f += gau2(af, b, 0.55, 0.35, 0.15, 0.15, -0.04);              // hollows
+    f += gau2(af, b, 0.27, 0.34, 0.05, 0.13, -0.035);             // nasolabial folds
+
+    // mouth: lips part and the corner pulls when it gasps
+    f += gau(af, b, 0, 0.36, 0.05, 0.06, -0.03);                  // philtrum
+    f += gau(af, b, 0, 0.44 - 0.02 * mo, 0.20, 0.045, 0.07);      // upper lip
+    f += gau(af, b, 0, 0.50, 0.22, 0.03 + 0.03 * mo, -0.10 - 0.14 * mo); // mouth line / opening
+    f += gau(af, b, 0, 0.57 + 0.03 * mo, 0.17, 0.05, 0.075);      // lower lip
+    f += gau(af, b, 0, 0.66, 0.15, 0.04, -0.04);                  // under-lip dip
+    f += gau(af, b, 0, 0.78, 0.20, 0.10, 0.09);                   // chin
+
+    var res = d + f * sstep(0, 0.45, edge);
+
+    // wet hair: a heavier mass above an uneven hairline and down the temples,
+    // with strand texture that catches the light
+    var hl = -0.55 + 0.05 * Math.sin(af * 8 + 1);
+    var hair = Math.max(sstep(hl + 0.06, hl - 0.06, b), sstep(0.78, 0.94, Math.abs(n)) * sstep(0.25, -0.15, b));
+    if (hair > 0) {
+      res += hair * Math.sqrt(edge) * (0.05 + 0.014 * Math.sin(af * 46 + 3.5 * Math.sin(b * 7 + af * 2.5)));
+    }
+    return res;
   }
 
   // ---------- setup ----------
@@ -182,7 +299,7 @@
     var rowY = horizon + (bottom - horizon) * Math.pow(face.zc, 2.15);
     face.chinY = rowY + face.amp * 0.15;
     face.u = novaX / width;
-    face.sp = Math.max(4, Math.min(6.5, face.h / 58));
+    face.sp = Math.max(3.2, Math.min(5, face.h / 84));
     face.db = face.sp / (face.h * 0.5);
     face.n = Math.floor((FB1 - FB0) / face.db) + 1;
     faceGrid = new Float32Array(face.n * FS);
@@ -327,17 +444,116 @@
   }
 
   // ---------- the face, drawn between two water rows ----------
-  var SHADE_CUTS = [0.5, 0.68, 0.82];
+  var SHADE_CUTS = [0.42, 0.56, 0.68, 0.8];
+
+  // One open (or blinking) eye. side: -1 for the left eye, +1 for the right.
+  // Coordinates are in the face's local space.
+  function drawEye(ex, ey, ew, eh, open, side, vis) {
+    var inX = ex - side * ew, outX = ex + side * ew;
+    var inY = ey + eh * 0.18, outY = ey - eh * 0.12;
+    var h = eh * open;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (open < 0.07) {
+      // lid shut: one soft curve
+      ctx.beginPath();
+      ctx.moveTo(inX, inY);
+      ctx.quadraticCurveTo(ex, ey + eh * 0.3, outX, outY);
+      ctx.strokeStyle = "rgb(190 215 255 / " + (0.7 * vis).toFixed(3) + ")";
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    var span = outX - inX;
+    var upper = new Path2D();
+    upper.moveTo(inX, inY);
+    upper.bezierCurveTo(inX + span * 0.3, ey - h * 1.4, inX + span * 0.75, ey - h * 1.25, outX, outY);
+    var lower = new Path2D();
+    lower.moveTo(outX, outY);
+    lower.bezierCurveTo(inX + span * 0.7, ey + h * 1.0, inX + span * 0.3, ey + h * 0.95, inX, inY);
+    var eye = new Path2D();
+    eye.addPath(upper);
+    eye.addPath(lower);
+    eye.closePath();
+
+    ctx.save();
+    ctx.clip(eye);
+
+    // sclera: dim and cool, darker toward the corners so it sits in the socket
+    var sg = ctx.createRadialGradient(ex, ey, 0, ex, ey, ew * 1.05);
+    sg.addColorStop(0, "rgb(222 234 255 / " + (0.72 * vis).toFixed(3) + ")");
+    sg.addColorStop(0.7, "rgb(150 180 235 / " + (0.6 * vis).toFixed(3) + ")");
+    sg.addColorStop(1, "rgb(60 90 160 / " + (0.55 * vis).toFixed(3) + ")");
+    ctx.fillStyle = sg;
+    ctx.fillRect(ex - ew * 1.2, ey - eh * 2.5, ew * 2.4, eh * 5);
+
+    // iris and pupil, shifted by gaze
+    var ix = ex + life.gx * ew * 0.4;
+    var iy = ey + life.gy * eh * 0.55 + eh * 0.05;
+    var ir = ew * 0.4;
+    var ig = ctx.createRadialGradient(ix, iy, ir * 0.15, ix, iy, ir);
+    ig.addColorStop(0, "rgb(130 182 255 / " + (0.98 * vis).toFixed(3) + ")");
+    ig.addColorStop(0.55, "rgb(62 112 232 / " + (0.98 * vis).toFixed(3) + ")");
+    ig.addColorStop(1, "rgb(16 34 100 / " + (0.98 * vis).toFixed(3) + ")");
+    ctx.fillStyle = ig;
+    ctx.beginPath();
+    ctx.arc(ix, iy, ir, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "rgb(2 6 18 / " + (0.96 * vis).toFixed(3) + ")";
+    ctx.beginPath();
+    ctx.arc(ix, iy, ir * (0.4 + 0.12 * life.wide * 3), 0, TAU);   // pupils open wider in fear
+    ctx.fill();
+
+    // catchlights
+    ctx.fillStyle = "rgb(255 255 255 / " + (0.95 * vis).toFixed(3) + ")";
+    ctx.beginPath();
+    ctx.arc(ix - ir * 0.36, iy - ir * 0.4, ir * 0.2, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "rgb(255 255 255 / " + (0.5 * vis).toFixed(3) + ")";
+    ctx.beginPath();
+    ctx.arc(ix + ir * 0.3, iy + ir * 0.35, ir * 0.1, 0, TAU);
+    ctx.fill();
+
+    // shadow cast by the upper lid
+    var lg = ctx.createLinearGradient(0, ey - h * 1.3, 0, ey + h * 0.2);
+    lg.addColorStop(0, "rgb(2 6 18 / " + (0.7 * vis).toFixed(3) + ")");
+    lg.addColorStop(1, "rgb(2 6 18 / 0)");
+    ctx.fillStyle = lg;
+    ctx.fillRect(ex - ew * 1.2, ey - eh * 2.5, ew * 2.4, eh * 3);
+    ctx.restore();
+
+    // lids
+    ctx.strokeStyle = "rgb(205 224 255 / " + (0.9 * vis).toFixed(3) + ")";
+    ctx.lineWidth = 1.5;
+    ctx.stroke(upper);
+    ctx.strokeStyle = "rgb(150 185 245 / " + (0.45 * vis).toFixed(3) + ")";
+    ctx.lineWidth = 0.9;
+    ctx.stroke(lower);
+    ctx.strokeStyle = "rgb(205 224 255 / " + (0.7 * vis).toFixed(3) + ")";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();                                                // a hint of lash at the outer corner
+    ctx.moveTo(outX, outY);
+    ctx.lineTo(outX + side * ew * 0.1, outY - eh * 0.2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawFace(t) {
     if (E < 0.003) return;
     var H = face.h, half = face.w * 0.5, n = face.n;
-    var yaw = Math.sin(t * 0.23) * 0.07;                       // slow head turn
-    var off = (1 - E) * H * 1.35;                               // how far below the surface
+    var yaw = life.gx * 0.1 + Math.sin(t * 0.23) * 0.04 + 0.02;     // turns slightly toward what it watches
+    var off = (1 - E) * H * 1.35;                                   // how far below the surface
     var cx = novaX + pointer * 14 + Math.sin(t * 0.31) * 5 * E;
-    var cy = face.chinY + off;
-    var tilt = -0.06 * (1 - E) + Math.sin(t * 0.27) * 0.016;
-    var vis = Math.min(1, E * 2.4) * 0.75;
+    var cy = face.chinY + off + Math.sin(t * 1.7) * 1.4 * E;        // breathing
+    var tilt = -0.06 * (1 - E) + Math.sin(t * 0.27) * 0.016 + life.gx * 0.025;
+    var vis = Math.min(1, E * 2.4) * 0.8;
     var relief = H * 0.17;
+    face.cx = cx;
+    face.cy = cy;
 
     // soft light behind the head
     var hy = cy - H * 0.5, hr = H * 1.0;
@@ -362,6 +578,14 @@
     var leftPts = [], rightPts = [];
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    ctx.lineWidth = 0.9;
+    var strokes = [
+      rgba(0.2 * vis),
+      rgba(0.42 * vis),
+      "rgb(120 165 255 / " + (0.62 * vis).toFixed(3) + ")",
+      "rgb(175 208 255 / " + (0.82 * vis).toFixed(3) + ")",
+      "rgb(230 241 255 / " + (0.97 * vis).toFixed(3) + ")"
+    ];
     for (j = 0; j < n; j++) {
       var b = FB0 + j * face.db;
       var hw = hwAt(b);
@@ -387,33 +611,64 @@
       leftPts.push(fxs[0], fys[0]);
       rightPts.push(fxs[m - 1], fys[m - 1]);
 
+      // band that hides the lines behind this one
       var shift = face.sp * 1.7;
       ctx.beginPath();
       ctx.moveTo(fxs[0], fys[0]);
       for (k = 1; k < m; k++) ctx.lineTo(fxs[k], fys[k]);
       for (k = m - 1; k >= 0; k--) ctx.lineTo(fxs[k], fys[k] + shift);
       ctx.closePath();
-      ctx.fillStyle = bg;
+      ctx.fillStyle = "rgb(6 12 28)";
       ctx.fill();
 
-      var p0 = new Path2D(), p1 = new Path2D(), p2 = new Path2D(), p3 = new Path2D();
-      var paths = [p0, p1, p2, p3];
+      // shade the segments into a few brightness bands, then stroke each band once
       for (k = 0; k < m - 1; k++) {
         var s = (fsh[k] + fsh[k + 1]) * 0.5;
-        var bk = s < SHADE_CUTS[0] ? 0 : s < SHADE_CUTS[1] ? 1 : s < SHADE_CUTS[2] ? 2 : 3;
-        paths[bk].moveTo(fxs[k], fys[k]);
-        paths[bk].lineTo(fxs[k + 1], fys[k + 1]);
+        fbk[k] = s < SHADE_CUTS[0] ? 0 : s < SHADE_CUTS[1] ? 1 : s < SHADE_CUTS[2] ? 2 : s < SHADE_CUTS[3] ? 3 : 4;
       }
-      ctx.lineWidth = 1.1;
-      ctx.strokeStyle = rgba(0.22 * vis);                         ctx.stroke(p0);
-      ctx.strokeStyle = rgba(0.45 * vis);                         ctx.stroke(p1);
-      ctx.strokeStyle = "rgb(150 190 255 / " + (0.7 * vis).toFixed(3) + ")";  ctx.stroke(p2);
-      ctx.strokeStyle = "rgb(224 237 255 / " + (0.95 * vis).toFixed(3) + ")"; ctx.stroke(p3);
+      for (var bk = 0; bk < 5; bk++) {
+        ctx.beginPath();
+        var any = false;
+        for (k = 0; k < m - 1; k++) {
+          if (fbk[k] !== bk) continue;
+          ctx.moveTo(fxs[k], fys[k]);
+          ctx.lineTo(fxs[k + 1], fys[k + 1]);
+          any = true;
+        }
+        if (any) { ctx.strokeStyle = strokes[bk]; ctx.stroke(); }
+      }
     }
 
-    // 3. a faint rim so the silhouette reads against the dark
+    // 3. eyes, laid on the skin where the depth map puts them
+    var ea = 0.4, eb = -0.13;
+    var eyeY = (eb - 1) * H * 0.5;
+    var ew = half * 0.2, eh = ew * 0.46;
+    var open = Math.min(1.25, life.eye * (1 - life.blink) * (1 + life.wide));
+    if (life.eye > 0.01) {
+      drawEye(-ea * half, eyeY - faceD(-ea, eb, yaw) * relief, ew, eh, open, -1, vis);
+      drawEye(ea * half, eyeY - faceD(ea, eb, yaw) * relief, ew, eh, open, 1, vis);
+    }
+
+    // 4. water running down the face
+    for (i = 0; i < runners.length; i++) {
+      var r = runners[i];
+      for (k = 0; k < 7; k++) {
+        var rb = r.b - k * 0.04;
+        var rhw = hwAt(rb);
+        if (rb < -0.95 || Math.abs(r.a) > rhw * 0.92) continue;
+        var rx = r.a * half;
+        var ry = (rb - 1) * H * 0.5 - faceD(r.a, rb, yaw) * relief;
+        var ra = (1 - k / 7) * 0.85 * vis;
+        ctx.fillStyle = "rgb(225 238 255 / " + ra.toFixed(3) + ")";
+        ctx.beginPath();
+        ctx.arc(rx, ry, k === 0 ? 1.7 : 1.1 * (1 - k / 9), 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    // 5. a faint rim so the silhouette reads against the dark
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgb(190 215 255 / " + (0.32 * vis).toFixed(3) + ")";
+    ctx.strokeStyle = "rgb(190 215 255 / " + (0.3 * vis).toFixed(3) + ")";
     ctx.beginPath();
     for (k = 0; k < leftPts.length; k += 2) {
       if (k === 0) ctx.moveTo(leftPts[k], leftPts[k + 1]); else ctx.lineTo(leftPts[k], leftPts[k + 1]);
@@ -519,6 +774,7 @@
     var vel = dt > 0 ? Math.abs(E - prevE) / dt : 0;           // how fast it is moving through the water
     disturb += (Math.min(vel, 0.5) * 2.2 - disturb * 0.7) * dt;
     if (disturb < 0) disturb = 0;
+    updateLife(time, dt);
     draw(dt);
     rafId = requestAnimationFrame(frame);
   }
@@ -529,6 +785,7 @@
     if (reduceMotion.matches) {
       time = 9.5; pointer = 0;
       E = 0.85; disturb = 0;                                    // still frame: face mostly risen
+      life.eye = 1; life.gx = 0; life.gy = 0.05;                 // eyes open, looking at the viewer
       draw(0);
       return;
     }
@@ -540,6 +797,7 @@
   window.addEventListener("resize", resize, { passive: true });
   window.addEventListener("pointermove", function (e) {
     pointerTarget = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = 1;
   }, { passive: true });
   reduceMotion.addEventListener("change", start);
 
