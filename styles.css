@@ -1,5 +1,6 @@
-/* Swell: coming soon.
-   One accent (seafoam), one theme per color scheme, one radius system (pill / none). */
+/* Novaworks: coming soon.
+   Dark space theme only (the brief is explicitly spacey). One accent: electric blue.
+   One radius system: pills for interactive chrome, nothing else is rounded. */
 
 @font-face {
   font-family: "Geist";
@@ -25,26 +26,13 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0a1315;
-  --ink: #e9f1ef;
-  --ink-muted: #9db1ad;
-  --accent: #7fd6c2;
+  --bg: #040814;
+  --ink: #e8efff;
+  --ink-muted: #9fb2d8;
+  --accent: #5b8cff;
   /* RGB triplet of the accent, read by the canvas */
-  --wave-rgb: 127 214 194;
-  --wave-alpha: 1;
+  --wave-rgb: 91 140 255;
   --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #edf3f1;
-    --ink: #0d1f1f;
-    --ink-muted: #3f5754;
-    --accent: #0e6b60;
-    --wave-rgb: 14 107 96;
-    --wave-alpha: 0.9;
-  }
 }
 
 *,
@@ -96,7 +84,7 @@ body {
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
   color: var(--ink);
   text-decoration: none;
   font-weight: 600;
@@ -107,13 +95,13 @@ body {
 
 .status {
   margin: 0;
-  padding: 0.4rem 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  padding: 0.4rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 999px;
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--ink);
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
 }
@@ -127,7 +115,7 @@ body {
 h1 {
   margin: 0;
   font-weight: 500;
-  font-size: clamp(3rem, 9vw, 7rem);
+  font-size: clamp(2.75rem, 8vw, 6.5rem);
   line-height: 1;
   letter-spacing: -0.045em;
 }

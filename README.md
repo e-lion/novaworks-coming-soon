@@ -1,10 +1,11 @@
-# Swell: coming soon
+# Novaworks: coming soon
 
-A single-page coming-soon site with a canvas wave field that ebbs and flows.
+A single-page coming-soon site: a glowing nova over a perspective field of
+ridged, shockwave-driven wave lines, with a starfield and the odd meteor.
 Plain HTML, CSS and one small JS file. No build step.
 
-- Light and dark themes follow the system setting.
-- Respects `prefers-reduced-motion` (shows a still frame).
+- Dark space theme with one electric-blue accent.
+- Respects `prefers-reduced-motion` (renders a still frame).
 - Geist is self-hosted from `fonts/`.
 
 ## Run locally
