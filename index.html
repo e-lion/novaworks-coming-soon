@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swell | Coming soon</title>
+  <meta name="description" content="Swell is nearly ready. We are polishing the last details and will open the doors very soon.">
+  <meta name="theme-color" content="#0a1315">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a1315'/%3E%3Cpath d='M4 19c4-6 8-6 12 0s8 6 12 0' fill='none' stroke='%237fd6c2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="waves" aria-hidden="true"></canvas>
+
+  <div class="page">
+    <header class="nav">
+      <a class="wordmark" href="./" aria-label="Swell home">
+        <svg class="wordmark-glyph" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+          <path d="M3 19c4.2-6.5 8.8-6.5 13 0s8.8 6.5 13 0" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        Swell
+      </a>
+      <p class="status">Coming soon</p>
+    </header>
+
+    <main class="hero">
+      <h1 class="reveal" style="--i:0">Something is<br><em>rising.</em></h1>
+      <p class="lede reveal" style="--i:1">Swell is nearly ready. We are polishing the last details and will open the doors very soon.</p>
+    </main>
+
+    <footer class="foot reveal" style="--i:2">
+      <p>&copy; 2026 Swell</p>
+    </footer>
+  </div>
+
+  <script src="waves.js"></script>
+</body>
+</html>

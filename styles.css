@@ -1,0 +1,181 @@
+/* Swell: coming soon.
+   One accent (seafoam), one theme per color scheme, one radius system (pill / none). */
+
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #0a1315;
+  --ink: #e9f1ef;
+  --ink-muted: #9db1ad;
+  --accent: #7fd6c2;
+  /* RGB triplet of the accent, read by the canvas */
+  --wave-rgb: 127 214 194;
+  --wave-alpha: 1;
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #edf3f1;
+    --ink: #0d1f1f;
+    --ink-muted: #3f5754;
+    --accent: #0e6b60;
+    --wave-rgb: 14 107 96;
+    --wave-alpha: 0.9;
+  }
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+#waves {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.page {
+  position: relative;
+  min-height: 100dvh;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* ---------- Nav ---------- */
+.nav {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+}
+.wordmark-glyph { color: var(--accent); }
+
+.status {
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  align-self: start;
+  padding-top: 4rem;
+}
+
+h1 {
+  margin: 0;
+  font-weight: 500;
+  font-size: clamp(3rem, 9vw, 7rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+/* Same-family emphasis. Descender-safe: line-height and bottom reserve. */
+h1 em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--accent);
+  display: inline-block;
+  line-height: 1.1;
+  padding-bottom: 0.08em;
+}
+
+.lede {
+  margin: 1.75rem 0 0;
+  max-width: 34ch;
+  font-size: clamp(1.0625rem, 1.6vw, 1.25rem);
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+/* ---------- Footer ---------- */
+.foot {
+  padding: 1.5rem 0 1.75rem;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+.foot p { margin: 0; }
+
+/* ---------- Wider screens ---------- */
+@media (min-width: 768px) {
+  .page { padding: 0 2.5rem; }
+  .hero { padding-top: 5rem; }
+}
+@media (min-width: 1024px) {
+  .page { padding: 0 4rem; }
+  .hero { padding-top: 6rem; }
+}
+
+/* ---------- Entrance (hierarchy: headline, then lede, then footer) ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    animation: rise 1100ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: calc(200ms + var(--i) * 140ms);
+  }
+  @keyframes rise {
+    to { opacity: 1; transform: none; }
+  }
+}
